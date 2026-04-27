@@ -57,15 +57,20 @@ echo "  Reviewer: $REVIEWER"
 echo "══════════════════════════════════════"
 
 # ── 1. Commit & Push ──
-STAGED=$(git diff --cached --name-only)
-UNSTAGED=$(git diff --name-only)
-if [[ -n "$STAGED" || -n "$UNSTAGED" ]]; then
+HAS_CHANGES=$(git status --porcelain)
+if [[ -n "$HAS_CHANGES" ]]; then
   echo "⏳ Committing changes..."
   git add -A
   git commit -m "$FULL_COMMIT_MSG"
   echo "✅ Committed"
 else
-  echo "⏭️  No uncommitted changes, skipping commit"
+  # Check if there are unpushed commits
+  UNPUSHED=$(git log origin/"$BRANCH".."$BRANCH" --oneline 2>/dev/null || echo "new")
+  if [[ -z "$UNPUSHED" ]]; then
+    echo "⚠️  No changes to commit and no unpushed commits"
+  else
+    echo "⏭️  No uncommitted changes, but found unpushed commits"
+  fi
 fi
 
 echo "⏳ Pushing to remote..."
