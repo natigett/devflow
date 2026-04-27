@@ -57,10 +57,9 @@ echo "  Reviewer: $REVIEWER"
 echo "══════════════════════════════════════"
 
 # ── 1. Commit & Push ──
-HAS_CHANGES=$(git status --porcelain)
-if [[ -n "$HAS_CHANGES" ]]; then
-  echo "⏳ Committing changes..."
-  git add -A
+HAS_STAGED=$(git diff --cached --name-only)
+if [[ -n "$HAS_STAGED" ]]; then
+  echo "⏳ Committing staged changes..."
   git commit -m "$FULL_COMMIT_MSG"
   echo "✅ Committed"
 else
@@ -163,9 +162,12 @@ SLACK_USERS=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com
 SLACK_USER_ID=$(echo "$SLACK_USERS" | REVIEWER_NAME="$REVIEWER" python3 -c "
 import sys, json, os
 data = json.load(sys.stdin)
-name = os.environ['REVIEWER_NAME']
+name = os.environ['REVIEWER_NAME'].lower()
 for u in data.get('members', []):
-    if u.get('name') == name or u.get('profile',{}).get('display_name') == name or u.get('real_name') == name:
+    dn = u.get('profile',{}).get('display_name','').lower()
+    rn = u.get('real_name','').lower()
+    un = u.get('name','').lower()
+    if name == dn or name == rn or name == un or name in rn or name in dn:
         print(u['id']); break
 " 2>/dev/null || true)
 
