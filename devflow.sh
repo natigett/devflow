@@ -157,19 +157,58 @@ echo "✅ Summary: $CHANGES_SUMMARY"
 # ── 4. Slack notification ──
 echo "⏳ Sending Slack message to $REVIEWER..."
 
-# Look up Slack user ID by display name
-SLACK_USERS=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list?limit=500")
-SLACK_USER_ID=$(echo "$SLACK_USERS" | REVIEWER_NAME="$REVIEWER" python3 -c "
-import sys, json, os
-data = json.load(sys.stdin)
+# Look up Slack user ID by display name (with cache + pagination)
+SLACK_CACHE="$HOME/.devflow/slack_users_cache.json"
+SLACK_USER_ID=$(REVIEWER_NAME="$REVIEWER" SLACK_TK="$SLACK_TOKEN" CACHE_FILE="$SLACK_CACHE" python3 << 'PYEOF'
+import urllib.request, json, os, time
+
+token = os.environ['SLACK_TK']
 name = os.environ['REVIEWER_NAME'].lower()
-for u in data.get('members', []):
-    dn = u.get('profile',{}).get('display_name','').lower()
-    rn = u.get('real_name','').lower()
-    un = u.get('name','').lower()
+cache_file = os.environ['CACHE_FILE']
+cache_max_age = 86400  # 24 hours
+
+# Try cache first
+users = []
+if os.path.exists(cache_file):
+    age = time.time() - os.path.getmtime(cache_file)
+    if age < cache_max_age:
+        users = json.load(open(cache_file))
+
+# Fetch from Slack if no cache
+if not users:
+    cursor = ''
+    while True:
+        url = f'https://slack.com/api/users.list?limit=200&cursor={cursor}'
+        req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read())
+        if not data.get('ok'):
+            break
+        for u in data.get('members', []):
+            if not u.get('deleted') and not u.get('is_bot'):
+                users.append({
+                    'id': u['id'],
+                    'name': u.get('name',''),
+                    'real_name': u.get('real_name',''),
+                    'display_name': u.get('profile',{}).get('display_name','')
+                })
+        cursor = data.get('response_metadata',{}).get('next_cursor','')
+        if not cursor:
+            break
+    # Save cache
+    with open(cache_file, 'w') as f:
+        json.dump(users, f)
+
+# Search
+for u in users:
+    dn = u['display_name'].lower()
+    rn = u['real_name'].lower()
+    un = u['name'].lower()
     if name == dn or name == rn or name == un or name in rn or name in dn:
-        print(u['id']); break
-" 2>/dev/null || true)
+        print(u['id'])
+        raise SystemExit(0)
+PYEOF
+)
 
 if [[ -z "$SLACK_USER_ID" ]]; then
   echo "⚠️  Could not find Slack user '$REVIEWER'. Skipping Slack."
