@@ -63,18 +63,20 @@ echo "✅ Pushed"
 
 # ── 2. Create PR ──
 echo "⏳ Creating Pull Request..."
+PR_BODY=$(PR_TITLE="$COMMIT_MSG [$JIRA_KEY]" PR_HEAD="$BRANCH" PR_BASE="$TARGET_BRANCH" PR_JIRA="$JIRA_URL" python3 -c "
+import json, os
+print(json.dumps({
+    'title': os.environ['PR_TITLE'],
+    'head': os.environ['PR_HEAD'],
+    'base': os.environ['PR_BASE'],
+    'body': 'Jira: ' + os.environ['PR_JIRA']
+}))")
+
 PR_RESPONSE=$(curl -s -X POST \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO_SLUG/pulls" \
-  -d "$(python3 -c "
-import json
-print(json.dumps({
-    'title': '$COMMIT_MSG [$JIRA_KEY]',
-    'head': '$BRANCH',
-    'base': '$TARGET_BRANCH',
-    'body': 'Jira: $JIRA_URL'
-}))")")
+  -d "$PR_BODY")
 
 PR_URL=$(echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('html_url',''))")
 
@@ -136,10 +138,10 @@ echo "⏳ Sending Slack message to $REVIEWER..."
 
 # Look up Slack user ID by display name
 SLACK_USERS=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list?limit=500")
-SLACK_USER_ID=$(echo "$SLACK_USERS" | python3 -c "
-import sys, json
+SLACK_USER_ID=$(echo "$SLACK_USERS" | REVIEWER_NAME="$REVIEWER" python3 -c "
+import sys, json, os
 data = json.load(sys.stdin)
-name = '$REVIEWER'
+name = os.environ['REVIEWER_NAME']
 for u in data.get('members', []):
     if u.get('name') == name or u.get('profile',{}).get('display_name') == name or u.get('real_name') == name:
         print(u['id']); break
@@ -155,10 +157,10 @@ else
     "https://slack.com/api/conversations.open" \
     -d "{\"users\":\"$SLACK_USER_ID\"}" | python3 -c "import sys,json; print(json.load(sys.stdin)['channel']['id'])")
 
-  SLACK_MSG=$(python3 -c "
-import json
-msg = 'Hey @$REVIEWER :)\nI have new PR to your review: $PR_URL\nThis is about $JIRA_URL\n\nDetails: $CHANGES_SUMMARY'
-print(json.dumps({'channel': '$DM_CHANNEL', 'text': msg}))
+  SLACK_MSG=$(SLACK_CH="$DM_CHANNEL" SLACK_REVIEWER="$REVIEWER" SLACK_PR="$PR_URL" SLACK_JIRA="$JIRA_URL" SLACK_SUMMARY="$CHANGES_SUMMARY" python3 -c "
+import json, os
+msg = f'Hey @{os.environ[\"SLACK_REVIEWER\"]} :)\nI have new PR to your review: {os.environ[\"SLACK_PR\"]}\nThis is about {os.environ[\"SLACK_JIRA\"]}\n\nDetails: {os.environ[\"SLACK_SUMMARY\"]}'
+print(json.dumps({'channel': os.environ['SLACK_CH'], 'text': msg}))
 ")
 
   curl -s -X POST \
