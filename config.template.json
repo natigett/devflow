@@ -1,0 +1,9 @@
+{
+  "github_token": "PASTE_YOUR_GITHUB_TOKEN",
+  "slack_bot_token": "PASTE_YOUR_xoxb_TOKEN",
+  "jira_base_url": "https://gett.atlassian.net",
+  "jira_email": "your-email@gett.com",
+  "jira_api_token": "PASTE_YOUR_JIRA_API_TOKEN",
+  "jira_transition_name": "IN CODE REVIEW",
+  "default_target_branch": "master"
+}
