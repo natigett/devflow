@@ -17,6 +17,7 @@ JIRA_EMAIL=$(read_config jira_email)
 JIRA_API_TOKEN=$(read_config jira_api_token)
 JIRA_TRANSITION_NAME=$(read_config jira_transition_name)
 DEFAULT_TARGET=$(read_config default_target_branch)
+OPENAI_API_KEY=$(read_config openai_api_key 2>/dev/null || echo "")
 
 # ── Parse arguments ──
 COMMIT_MSG=""
@@ -85,23 +86,50 @@ if [[ -z "$PR_URL" ]]; then
 fi
 echo "✅ PR created: $PR_URL"
 
-# ── 3. Generate changes summary ──
+# ── 3. Generate AI changes summary ──
 echo "⏳ Generating changes summary..."
-DIFF_STAT=$(git diff "$TARGET_BRANCH"..."$BRANCH" --stat 2>/dev/null || echo "")
-DIFF_SHORT=$(git log "$TARGET_BRANCH".."$BRANCH" --oneline 2>/dev/null || echo "")
-CHANGES_SUMMARY=$(python3 -c "
+DIFF_CONTENT=$(git diff "$TARGET_BRANCH"..."$BRANCH" 2>/dev/null | head -c 12000 || echo "")
+
+if [[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != "PASTE_YOUR_OPENAI_API_KEY" && -n "$DIFF_CONTENT" ]]; then
+  CHANGES_SUMMARY=$(DIFF_INPUT="$DIFF_CONTENT" OPENAI_KEY="$OPENAI_API_KEY" python3 << 'PYEOF'
+import json, urllib.request, sys, os
+
+diff = os.environ.get("DIFF_INPUT", "")
+api_key = os.environ.get("OPENAI_KEY", "")
+
+body = json.dumps({
+    "model": "gpt-4o-mini",
+    "messages": [
+        {"role": "system", "content": "You summarize code diffs for PR review messages on Slack. Write 1-3 short bullet points describing WHAT changed and WHY it matters. Be concise, developer-friendly. No markdown, use plain text with • bullets. Max 300 chars total."},
+        {"role": "user", "content": f"Summarize this diff:\n{diff}"}
+    ],
+    "max_tokens": 150,
+    "temperature": 0.3
+}).encode()
+
+req = urllib.request.Request(
+    "https://api.openai.com/v1/chat/completions",
+    data=body,
+    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+)
+try:
+    resp = urllib.request.urlopen(req, timeout=15)
+    result = json.loads(resp.read())
+    print(result["choices"][0]["message"]["content"].strip())
+except Exception as e:
+    print(f"Could not generate AI summary: {e}", file=sys.stderr)
+    print("No summary available")
+PYEOF
+  )
+else
+  # Fallback: basic file list
+  DIFF_STAT=$(git diff "$TARGET_BRANCH"..."$BRANCH" --stat 2>/dev/null || echo "")
+  CHANGES_SUMMARY=$(python3 -c "
 stat = '''$DIFF_STAT'''
-logs = '''$DIFF_SHORT'''
 files = [l.strip().split('|')[0].strip() for l in stat.strip().split('\n') if '|' in l]
-summary_parts = []
-if files:
-    summary_parts.append('Files changed: ' + ', '.join(files[:10]))
-    if len(files) > 10:
-        summary_parts.append('...and ' + str(len(files)-10) + ' more')
-if logs:
-    summary_parts.append('Commits: ' + '; '.join(l.split(' ',1)[1] if ' ' in l else l for l in logs.strip().split('\n')[:5]))
-print(' | '.join(summary_parts) if summary_parts else 'No summary available')
+print(', '.join(files[:10]) if files else 'No summary available')
 " 2>/dev/null || echo "No summary available")
+fi
 echo "✅ Summary: $CHANGES_SUMMARY"
 
 # ── 4. Slack notification ──
