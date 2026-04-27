@@ -56,7 +56,18 @@ echo "  Jira:    $JIRA_KEY"
 echo "  Reviewer: $REVIEWER"
 echo "══════════════════════════════════════"
 
-# ── 1. Push ──
+# ── 1. Commit & Push ──
+STAGED=$(git diff --cached --name-only)
+UNSTAGED=$(git diff --name-only)
+if [[ -n "$STAGED" || -n "$UNSTAGED" ]]; then
+  echo "⏳ Committing changes..."
+  git add -A
+  git commit -m "$FULL_COMMIT_MSG"
+  echo "✅ Committed"
+else
+  echo "⏭️  No uncommitted changes, skipping commit"
+fi
+
 echo "⏳ Pushing to remote..."
 git push -u origin "$BRANCH"
 echo "✅ Pushed"
@@ -82,7 +93,13 @@ PR_URL=$(echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.
 
 if [[ -z "$PR_URL" ]]; then
   echo "❌ Failed to create PR"
-  echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','Unknown error'))"
+  echo "$PR_RESPONSE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print('Message:', data.get('message','Unknown error'))
+for e in data.get('errors', []):
+    print('  -', e.get('message', e))
+"
   exit 1
 fi
 echo "✅ PR created: $PR_URL"
