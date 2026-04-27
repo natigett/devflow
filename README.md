@@ -41,14 +41,24 @@ echo 'alias devflow="~/.devflow/devflow.sh"' >> ~/.zshrc && source ~/.zshrc
 
 ## Usage
 
-### Command format (prompt to Copilot):
+### Using the alias (terminal)
+
+After installation, the `devflow` alias is available in any terminal:
+
+```bash
+devflow -message:"Fix PubNub reconnection logic" -jira:"https://mycompany.atlassian.net/browse/DBX-1234" -reviewer:"john.doe"
+```
+
+### Using Copilot (prompt)
+
+You can also prompt GitHub Copilot with:
 ```
 Commit -message:"<message>" -jira:"<jira-url>" -reviewer:"<slack-display-name>"
 ```
 
-### Example:
-```
-Commit -message:"Fix PubNub reconnection logic" -jira:"https://mycompany.atlassian.net/browse/DBX-1234" -reviewer:"john.doe"
+### Full example:
+```bash
+devflow -message:"Fix PubNub reconnection logic" -jira:"https://mycompany.atlassian.net/browse/DBX-1234" -reviewer:"john.doe"
 ```
 
 ### What happens:
