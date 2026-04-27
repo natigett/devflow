@@ -17,7 +17,6 @@ JIRA_EMAIL=$(read_config jira_email)
 JIRA_API_TOKEN=$(read_config jira_api_token)
 JIRA_TRANSITION_NAME=$(read_config jira_transition_name)
 DEFAULT_TARGET=$(read_config default_target_branch)
-OPENAI_API_KEY=$(read_config openai_api_key 2>/dev/null || echo "")
 
 # ── Parse arguments ──
 COMMIT_MSG=""
@@ -90,12 +89,12 @@ echo "✅ PR created: $PR_URL"
 echo "⏳ Generating changes summary..."
 DIFF_CONTENT=$(git diff "$TARGET_BRANCH"..."$BRANCH" 2>/dev/null | head -c 12000 || echo "")
 
-if [[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != "PASTE_YOUR_OPENAI_API_KEY" && -n "$DIFF_CONTENT" ]]; then
-  CHANGES_SUMMARY=$(DIFF_INPUT="$DIFF_CONTENT" OPENAI_KEY="$OPENAI_API_KEY" python3 << 'PYEOF'
+if [[ -n "$GITHUB_TOKEN" && "$GITHUB_TOKEN" != "PASTE_YOUR_GITHUB_TOKEN" && -n "$DIFF_CONTENT" ]]; then
+  CHANGES_SUMMARY=$(DIFF_INPUT="$DIFF_CONTENT" GH_TOKEN="$GITHUB_TOKEN" python3 << 'PYEOF'
 import json, urllib.request, sys, os
 
 diff = os.environ.get("DIFF_INPUT", "")
-api_key = os.environ.get("OPENAI_KEY", "")
+token = os.environ.get("GH_TOKEN", "")
 
 body = json.dumps({
     "model": "gpt-4o-mini",
@@ -108,9 +107,9 @@ body = json.dumps({
 }).encode()
 
 req = urllib.request.Request(
-    "https://api.openai.com/v1/chat/completions",
+    "https://models.inference.ai.azure.com/chat/completions",
     data=body,
-    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 )
 try:
     resp = urllib.request.urlopen(req, timeout=15)
