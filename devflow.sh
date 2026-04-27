@@ -85,7 +85,26 @@ if [[ -z "$PR_URL" ]]; then
 fi
 echo "✅ PR created: $PR_URL"
 
-# ── 3. Slack notification ──
+# ── 3. Generate changes summary ──
+echo "⏳ Generating changes summary..."
+DIFF_STAT=$(git diff "$TARGET_BRANCH"..."$BRANCH" --stat 2>/dev/null || echo "")
+DIFF_SHORT=$(git log "$TARGET_BRANCH".."$BRANCH" --oneline 2>/dev/null || echo "")
+CHANGES_SUMMARY=$(python3 -c "
+stat = '''$DIFF_STAT'''
+logs = '''$DIFF_SHORT'''
+files = [l.strip().split('|')[0].strip() for l in stat.strip().split('\n') if '|' in l]
+summary_parts = []
+if files:
+    summary_parts.append('Files changed: ' + ', '.join(files[:10]))
+    if len(files) > 10:
+        summary_parts.append('...and ' + str(len(files)-10) + ' more')
+if logs:
+    summary_parts.append('Commits: ' + '; '.join(l.split(' ',1)[1] if ' ' in l else l for l in logs.strip().split('\n')[:5]))
+print(' | '.join(summary_parts) if summary_parts else 'No summary available')
+" 2>/dev/null || echo "No summary available")
+echo "✅ Summary: $CHANGES_SUMMARY"
+
+# ── 4. Slack notification ──
 echo "⏳ Sending Slack message to $REVIEWER..."
 
 # Look up Slack user ID by display name
@@ -109,21 +128,22 @@ else
     "https://slack.com/api/conversations.open" \
     -d "{\"users\":\"$SLACK_USER_ID\"}" | python3 -c "import sys,json; print(json.load(sys.stdin)['channel']['id'])")
 
+  SLACK_MSG=$(python3 -c "
+import json
+msg = 'Hey @$REVIEWER :)\nI have new PR to your review: $PR_URL\nThis is about $JIRA_URL\n\nDetails: $CHANGES_SUMMARY'
+print(json.dumps({'channel': '$DM_CHANNEL', 'text': msg}))
+")
+
   curl -s -X POST \
     -H "Authorization: Bearer $SLACK_TOKEN" \
     -H "Content-Type: application/json" \
     "https://slack.com/api/chat.postMessage" \
-    -d "$(python3 -c "
-import json
-print(json.dumps({
-    'channel': '$DM_CHANNEL',
-    'text': '👋 Hey! Could you please review my PR?\n*$COMMIT_MSG* [$JIRA_KEY]\n🔗 $PR_URL\n📋 $JIRA_URL'
-}))")" > /dev/null
+    -d "$SLACK_MSG" > /dev/null
 
   echo "✅ Slack message sent"
 fi
 
-# ── 4. Update Jira status ──
+# ── 5. Update Jira status ──
 echo "⏳ Updating Jira $JIRA_KEY → $JIRA_TRANSITION_NAME..."
 
 JIRA_AUTH=$(echo -n "$JIRA_EMAIL:$JIRA_API_TOKEN" | base64)
